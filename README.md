@@ -30,10 +30,20 @@ conda activate optical-flow
 pip install opencv-python numpy
 ```
 
-## 检测光流
+## 使用
+
+### 批量检测
+
+将视频放入 `source/` 目录，不指定路径即可逐一检测：
 
 ```bash
-python detector.py <video> [选项]
+python detector.py -s 32 --scale 0.5 --viz
+```
+
+### 检测单个视频
+
+```bash
+python detector.py <视频路径> [选项]
 ```
 
 ### 通用选项
@@ -63,7 +73,7 @@ python detector.py video.mp4 -s 32 --scale 0.5
 python detector.py video.mp4 -s 32 --scale 0.5 --viz --viz-step 5
 ```
 
-输出：`output/<视频名>_flow.json`
+输出：`output/<视频名>_dense_s32_scale0.5/flow.json`
 
 ```json
 {
@@ -94,7 +104,7 @@ python detector.py video.mp4 --sparse -n 800 --scale 0.5
 python detector.py video.mp4 --sparse -n 500 -q 0.005 --viz
 ```
 
-输出：`output/<视频名>_sparse.json`
+输出：`output/<视频名>_sparse_n500_scale0.5/flow.json`
 
 ```json
 {
