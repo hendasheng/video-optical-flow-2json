@@ -159,7 +159,13 @@ def main():
     print(f"\nDone. {len(result['frames'])} frames -> {run_dir}/")
     print(f"  flow.json ({size_mb:.1f} MB)")
     if args.viz:
-        print(f"  viz/ ({len(list(viz_dir.glob('*.png')))} images)")
+        viz_files = sorted(viz_dir.glob("*.png"))
+        print(f"  viz/ ({len(viz_files)} images)")
+        if viz_files:
+            import shutil
+            preview = run_dir / "preview.png"
+            shutil.copy2(str(viz_files[0]), str(preview))
+            print(f"  preview.png (copied from {viz_files[0].name})")
 
 
 def run_dense(cap, prev_gray, prev_frame, start, end, args, viz_dir):
