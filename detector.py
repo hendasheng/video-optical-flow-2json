@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import json
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 LK_PARAMS = dict(winSize=(15, 15), maxLevel=2,
@@ -94,8 +95,9 @@ def process_video(video_path, args):
 
     mode = "sparse" if args.sparse else "dense"
 
+    date_tag = datetime.now().strftime("%y%m%d")
     video_stem = Path(video_path).stem
-    parts = [video_stem, mode]
+    parts = [date_tag, video_stem, mode]
     if args.sparse:
         parts.append(f"n{args.max_points}")
     else:
