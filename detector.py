@@ -250,8 +250,8 @@ def run_sparse(cap, prev_gray, prev_frame, start, end, args, viz_dir):
             for k in range(len(good_curr)):
                 frame_data.append([
                     int(pt_ids[k]),
-                    round(good_curr[k, 0], 2), round(good_curr[k, 1], 2),
-                    round(dx[k], 4), round(dy[k], 4),
+                    round(float(good_curr[k, 0]), 2), round(float(good_curr[k, 1]), 2),
+                    round(float(dx[k]), 4), round(float(dy[k]), 4),
                 ])
             result["frames"].append({"frame": i, "points": frame_data})
 
