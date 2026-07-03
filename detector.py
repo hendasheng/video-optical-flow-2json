@@ -95,9 +95,8 @@ def process_video(video_path, args):
 
     mode = "sparse" if args.sparse else "dense"
 
-    date_tag = datetime.now().strftime("%y%m%d")
-    video_stem = Path(video_path).stem
-    parts = [date_tag, video_stem, mode]
+    date_tag = datetime.now().strftime("%y%m%d_%H%M%S")
+    parts = [date_tag, mode]
     if args.sparse:
         parts.append(f"n{args.max_points}")
     else:
