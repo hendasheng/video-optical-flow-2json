@@ -20,13 +20,14 @@ def detect_features(gray, max_points, quality):
     return pts.reshape(-1, 2)
 
 
-def compute_flow_grid(prev_gray, curr_gray, grid_step=16):
-    """Compute dense optical flow, then downsample to a grid."""
-    flow = cv2.calcOpticalFlowFarneback(
-        prev_gray, curr_gray, None,
-        pyr_scale=0.5, levels=3, winsize=15,
-        iterations=3, poly_n=5, poly_sigma=1.2, flags=0
-    )
+def create_dis():
+    """Create DIS optical flow instance (reuse across frames)."""
+    return cv2.DISOpticalFlow_create(cv2.DISOPTICAL_FLOW_PRESET_MEDIUM)
+
+
+def compute_flow_grid(prev_gray, curr_gray, dis, grid_step=16):
+    """Compute dense optical flow with DIS, downsample to a grid."""
+    flow = dis.calc(prev_gray, curr_gray, None)
     h, w = flow.shape[:2]
     grid_flow = []
     for y in range(0, h, grid_step):
@@ -212,6 +213,7 @@ def run_dense(cap, prev_gray, prev_frame, start, end, args, video_path, viz_dir)
         "frames": [],
     }
 
+    dis = create_dis()
     new_size = (result["width"], result["height"]) if args.scale != 1.0 else None
 
     for i in range(start + 1, end):
@@ -222,7 +224,7 @@ def run_dense(cap, prev_gray, prev_frame, start, end, args, video_path, viz_dir)
             curr_frame = cv2.resize(curr_frame, new_size)
         curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_BGR2GRAY)
 
-        grid, flow = compute_flow_grid(prev_gray, curr_gray, args.step)
+        grid, flow = compute_flow_grid(prev_gray, curr_gray, dis, args.step)
         result["frames"].append({"frame": i, "flow": grid})
 
         if viz_dir and (i - start) % args.viz_step == 0:

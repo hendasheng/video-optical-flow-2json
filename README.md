@@ -30,6 +30,15 @@ conda activate optical-flow
 pip install opencv-python numpy
 ```
 
+## 技术方案
+
+| 模式 | 算法 | 速度 | 适用 |
+|------|------|------|------|
+| 稠密 | DIS (Dense Inverse Search) | 快 | 流体扰动、全场变形 |
+| 稀疏 | Lucas-Kanade + Shi-Tomasi 角点 | 极快 | 粒子跟随、点云效果 |
+
+DIS 在精度与 Farneback 接近的前提下速度快 2-3 倍，适合离线批量处理。
+
 ## 使用
 
 ### 批量检测
@@ -59,7 +68,7 @@ python detector.py <视频路径> [选项]
 
 ### 稠密模式（默认）
 
-Farneback 算法，输出固定网格运动向量。适合做流体扰动、全场变形等效果。
+DIS (Dense Inverse Search) 算法，输出固定网格运动向量。适合做流体扰动、全场变形等效果。
 
 | 选项 | 默认值 | 说明 |
 |------|--------|------|
