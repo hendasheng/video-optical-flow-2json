@@ -240,6 +240,8 @@ def run_sparse(cap, prev_gray, prev_frame, start, end, args, viz_dir):
                 max_id += len(pts)
             result["frames"].append({"frame": i, "points": []})
         else:
+            good_prev = good_prev.reshape(-1, 2)
+            good_curr = good_curr.reshape(-1, 2)
             dx = good_curr[:, 0] - good_prev[:, 0]
             dy = good_curr[:, 1] - good_prev[:, 1]
             frame_data = []
