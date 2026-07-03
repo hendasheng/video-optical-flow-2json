@@ -54,7 +54,7 @@
 <div class="drop-zone" id="dropZone">
   <div class="drop-inner">
     <p class="title">拖入视频 + 光流 JSON 文件</p>
-    <p>支持同时拖入两个文件，或分开拖入</p>
+    <p>支持稠密网格和稀疏追踪两种格式</p>
     <p class="status" id="dropStatus"></p>
   </div>
 </div>
@@ -121,11 +121,15 @@ function checkReady() {
 
 function updateInfoBar() {
   if (!flowData) return;
-  const jw = flowData.width, jh = flowData.height;
-  const vw = video.videoWidth, vh = video.videoHeight;
-  const ratio = vw / jw;
+  const vw = video.videoWidth;
+  const ratio = vw / flowData.width;
   const scaleInfo = ratio !== 1 ? ` | 放大 ${ratio.toFixed(1)}x` : '';
-  infoBar.textContent = `网格 ${flowData.grid_cols}x${flowData.grid_rows} | 步长 ${flowData.grid_step}px${scaleInfo} | ${flowData.total_frames} 帧`;
+  const modeLabel = flowData.mode === 'sparse' ? '稀疏' : '稠密';
+  if (flowData.mode === 'sparse') {
+    infoBar.textContent = `${modeLabel} | ${flowData.max_points} 点${scaleInfo} | ${flowData.total_frames} 帧`;
+  } else {
+    infoBar.textContent = `${modeLabel} | 网格 ${flowData.grid_cols}x${flowData.grid_rows}${scaleInfo} | ${flowData.total_frames} 帧`;
+  }
 }
 
 function formatTime(s) {
@@ -153,12 +157,13 @@ function loadFlowJSON(file) {
   reader.onload = e => {
     try {
       const data = JSON.parse(e.target.result);
-      if (!data.frames || !data.grid_step) {
-        dropStatus.textContent = 'JSON 格式不正确：缺少 frames 或 grid_step';
+      if (!data.frames || !data.mode) {
+        dropStatus.textContent = 'JSON 格式不正确：缺少 frames 或 mode';
         return;
       }
       flowData = data;
-      dropStatus.textContent = `JSON 加载完成 (${data.total_frames} 帧)`;
+      const label = data.mode === 'sparse' ? '稀疏' : '稠密';
+      dropStatus.textContent = `JSON 加载完成 (${label}, ${data.total_frames} 帧)`;
       setReady('flow');
     } catch (err) {
       dropStatus.textContent = 'JSON 解析失败: ' + err.message;
@@ -186,7 +191,6 @@ function handleFiles(files) {
   }
 }
 
-// Drag & drop
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
 dropZone.addEventListener('drop', e => {
@@ -195,36 +199,18 @@ dropZone.addEventListener('drop', e => {
   handleFiles(e.dataTransfer.files);
 });
 
-// Click to select files
 dropZone.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', () => handleFiles(fileInput.files));
 
-// Playback controls
 playBtn.addEventListener('click', () => {
-  if (video.paused) {
-    video.play();
-    playBtn.textContent = '暂停';
-    drawLoop();
-  } else {
-    video.pause();
-    playBtn.textContent = '播放';
-    cancelAnimationFrame(animationId);
-  }
+  if (video.paused) { video.play(); playBtn.textContent = '暂停'; drawLoop(); }
+  else { video.pause(); playBtn.textContent = '播放'; cancelAnimationFrame(animationId); }
 });
 
-video.addEventListener('pause', () => {
-  playBtn.textContent = '播放';
-  cancelAnimationFrame(animationId);
-});
-video.addEventListener('play', () => {
-  playBtn.textContent = '暂停';
-  drawLoop();
-});
+video.addEventListener('pause', () => { playBtn.textContent = '播放'; cancelAnimationFrame(animationId); });
+video.addEventListener('play', () => { playBtn.textContent = '暂停'; drawLoop(); });
 
-seekBar.addEventListener('input', () => {
-  video.currentTime = parseFloat(seekBar.value);
-  drawFrame();
-});
+seekBar.addEventListener('input', () => { video.currentTime = parseFloat(seekBar.value); drawFrame(); });
 
 video.addEventListener('timeupdate', () => {
   if (!video.paused) {
@@ -239,7 +225,6 @@ arrowScaleInput.addEventListener('input', () => {
   drawFrame();
 });
 
-// Canvas drawing
 function resizeCanvas() {
   const rect = player.getBoundingClientRect();
   canvas.width = rect.width;
@@ -248,28 +233,7 @@ function resizeCanvas() {
 
 window.addEventListener('resize', () => { resizeCanvas(); drawFrame(); });
 
-function drawFrame() {
-  if (!videoLoaded || !flowLoaded) return;
-  resizeCanvas();
-
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
-  if (!vw || !vh) return;
-
-  const scale = Math.max(canvas.width / vw, canvas.height / vh);
-  const ox = (canvas.width - vw * scale) / 2;
-  const oy = (canvas.height - vh * scale) / 2;
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.save();
-  ctx.translate(ox, oy);
-  ctx.scale(scale, scale);
-
-  const frameIdx = frameByTime(video.currentTime);
-  const frameData = flowData.frames[Math.min(frameIdx, flowData.frames.length - 1)];
-  if (!frameData) { ctx.restore(); return; }
-
-  const flowRatio = vw / flowData.width;
+function drawDense(frameData, flowRatio) {
   const gs = flowData.grid_step * flowRatio;
   const rows = frameData.flow.length;
   const cols = rows > 0 ? frameData.flow[0].length : 0;
@@ -306,6 +270,79 @@ function drawFrame() {
         ctx.stroke();
       }
     }
+  }
+}
+
+function drawSparse(frameData, flowRatio) {
+  const pts = frameData.points;
+  if (!pts || !pts.length) return;
+
+  for (const p of pts) {
+    const [, x, y, dx, dy] = p;
+    const sx = dx * flowRatio * arrowScale;
+    const sy = dy * flowRatio * arrowScale;
+    const mag = Math.sqrt(dx * dx + dy * dy);
+    if (mag < 0.1) continue;
+
+    const px = x * flowRatio;
+    const py = y * flowRatio;
+
+    // Dot at current position
+    ctx.beginPath();
+    ctx.arc(px, py, 3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 255, 255, 0.9)';
+    ctx.fill();
+
+    // Arrow from current position in motion direction
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px + sx, py + sy);
+    ctx.strokeStyle = `rgba(255, 255, 0, ${0.6 + Math.min(mag * 5, 0.4)})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    if (mag * flowRatio * arrowScale > 0.5) {
+      const angle = Math.atan2(sy, sx);
+      const headLen = Math.min(4, mag * flowRatio * arrowScale * 0.3);
+      const tipX = px + sx;
+      const tipY = py + sy;
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(tipX - headLen * Math.cos(angle - 0.8), tipY - headLen * Math.sin(angle - 0.8));
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(tipX - headLen * Math.cos(angle + 0.8), tipY - headLen * Math.sin(angle + 0.8));
+      ctx.stroke();
+    }
+  }
+}
+
+function drawFrame() {
+  if (!videoLoaded || !flowLoaded) return;
+  resizeCanvas();
+
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) return;
+
+  const scale = Math.max(canvas.width / vw, canvas.height / vh);
+  const ox = (canvas.width - vw * scale) / 2;
+  const oy = (canvas.height - vh * scale) / 2;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.translate(ox, oy);
+  ctx.scale(scale, scale);
+
+  const frameIdx = frameByTime(video.currentTime);
+  const frameData = flowData.frames[Math.min(frameIdx, flowData.frames.length - 1)];
+  if (!frameData) { ctx.restore(); return; }
+
+  const flowRatio = vw / flowData.width;
+
+  if (flowData.mode === 'sparse') {
+    drawSparse(frameData, flowRatio);
+  } else {
+    drawDense(frameData, flowRatio);
   }
   ctx.restore();
 }
