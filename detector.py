@@ -139,9 +139,9 @@ def process_video(video_path, args):
     prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
 
     if args.sparse:
-        result = run_sparse(cap, prev_gray, prev_frame, start, end, args, viz_dir if args.viz else None)
+        result = run_sparse(cap, prev_gray, prev_frame, start, end, args, video_path, viz_dir if args.viz else None)
     else:
-        result = run_dense(cap, prev_gray, prev_frame, start, end, args, viz_dir if args.viz else None)
+        result = run_dense(cap, prev_gray, prev_frame, start, end, args, video_path, viz_dir if args.viz else None)
 
     cap.release()
 
@@ -196,10 +196,10 @@ def main():
             print()
 
 
-def run_dense(cap, prev_gray, prev_frame, start, end, args, viz_dir):
+def run_dense(cap, prev_gray, prev_frame, start, end, args, video_path, viz_dir):
     result = {
         "mode": "dense",
-        "video": str(Path(args.video).resolve()),
+        "video": str(Path(video_path).resolve()),
         "width": prev_gray.shape[1],
         "height": prev_gray.shape[0],
         "grid_step": args.step,
@@ -234,7 +234,7 @@ def run_dense(cap, prev_gray, prev_frame, start, end, args, viz_dir):
     return result
 
 
-def run_sparse(cap, prev_gray, prev_frame, start, end, args, viz_dir):
+def run_sparse(cap, prev_gray, prev_frame, start, end, args, video_path, viz_dir):
     pts = detect_features(prev_gray, args.max_points, args.quality)
     if pts is None:
         raise SystemExit("No features detected on first frame")
@@ -244,7 +244,7 @@ def run_sparse(cap, prev_gray, prev_frame, start, end, args, viz_dir):
 
     result = {
         "mode": "sparse",
-        "video": str(Path(args.video).resolve()),
+        "video": str(Path(video_path).resolve()),
         "width": prev_gray.shape[1],
         "height": prev_gray.shape[0],
         "max_points": args.max_points,
