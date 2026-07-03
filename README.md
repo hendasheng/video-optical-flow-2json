@@ -2,33 +2,33 @@
 
 视频光流离线检测，支持稠密网格和稀疏追踪两种模式，导出 JSON 供前端渲染光流可视化效果。
 
-## 安装
-
-### Windows
-
-```powershell
-# 安装 Miniconda（如已安装跳过）
-# 下载 https://docs.conda.io/en/latest/miniconda.html 并安装
-
-conda create -n optical-flow python=3.11 -y
-conda activate optical-flow
-pip install opencv-python numpy
-```
-
-### macOS
+## 快速开始
 
 ```bash
-# 安装 Homebrew（如已安装跳过）
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# 1. 克隆仓库
+git clone https://github.com/hendasheng/video-optical-flow-2json.git
+cd video-optical-flow-2json
 
-# 安装 Miniconda
-brew install --cask miniconda
-conda init "$(basename $SHELL)"
-
+# 2. 创建虚拟环境并安装依赖
 conda create -n optical-flow python=3.11 -y
 conda activate optical-flow
 pip install opencv-python numpy
+
+# 3. 把要检测的视频放到 source/ 目录
+
+# 4. 运行检测
+python detector.py -s 32 --scale 0.5 --viz
 ```
+
+**没有 conda？**
+
+Windows 装 [Miniconda](https://docs.conda.io/en/latest/miniconda.html)，macOS 用 `brew install --cask miniconda` 然后 `conda init zsh`，重开终端即可。
+
+---
+
+**每次使用前**
+
+先激活环境：`conda activate optical-flow`
 
 ## 技术方案
 
@@ -131,7 +131,7 @@ python detector.py video.mp4 --sparse -n 500 -q 0.005 --viz
 
 ## 预览光流
 
-用浏览器打开 `web/index.html`，拖入视频和对应的光流 JSON 文件即可播放。
+用浏览器打开 `web/index.html`（可直接双击打开，无需服务器），拖入视频和对应的光流 JSON 文件即可播放。
 
 - **空格**：播放 / 暂停
 - **← →**：逐帧进退
