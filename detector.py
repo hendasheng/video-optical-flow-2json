@@ -111,7 +111,7 @@ def process_video(video_path, args):
     run_dir = script_dir / "output" / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    json_path = args.output or str(run_dir / "flow.json")
+    json_path = args.output or str(run_dir / f"{run_name}.json")
     viz_dir = run_dir / "viz"
     if args.viz:
         viz_dir.mkdir(exist_ok=True)
