@@ -1,9 +1,11 @@
-import cv2
-import numpy as np
-import json
 import argparse
+import json
+import shutil
 from datetime import datetime
 from pathlib import Path
+
+import cv2
+import numpy as np
 
 LK_PARAMS = dict(winSize=(15, 15), maxLevel=2,
                  criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
@@ -45,7 +47,7 @@ def compute_sparse_flow(prev_gray, curr_gray, prev_pts):
     return prev_pts[status], curr_pts[status]
 
 
-def flow_to_arrows(frame, flow, grid_step=16, arrow_scale=1.0):
+def flow_to_arrows(frame, flow, grid_step=16):
     """Draw flow arrows on the frame at grid points."""
     vis = frame.copy()
     h, w = flow.shape[:2]
@@ -55,7 +57,7 @@ def flow_to_arrows(frame, flow, grid_step=16, arrow_scale=1.0):
             mag = np.sqrt(dx * dx + dy * dy)
             if mag < 0.5:
                 continue
-            tip = (int(x + dx * arrow_scale), int(y + dy * arrow_scale))
+            tip = (int(x + dx), int(y + dy))
             cv2.arrowedLine(vis, (x, y), tip, (0, 255, 0), 1, tipLength=0.3)
     return vis
 
@@ -156,7 +158,6 @@ def process_video(video_path, args):
         viz_files = sorted(viz_dir.glob("*.png"))
         print(f"  viz/ ({len(viz_files)} images)")
         if viz_files:
-            import shutil
             preview = run_dir / "preview.png"
             shutil.copy2(str(viz_files[0]), str(preview))
             print(f"  preview.png")
@@ -239,9 +240,8 @@ def run_sparse(cap, prev_gray, prev_frame, start, end, args, video_path, viz_dir
     pts = detect_features(prev_gray, args.max_points, args.quality)
     if pts is None:
         raise SystemExit("No features detected on first frame")
-    n_pts = len(pts)
-    pt_ids = np.arange(n_pts, dtype=np.int32)
-    max_id = n_pts
+    pt_ids = np.arange(len(pts), dtype=np.int32)
+    max_id = len(pts)
 
     result = {
         "mode": "sparse",
