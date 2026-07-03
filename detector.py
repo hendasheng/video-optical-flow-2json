@@ -72,24 +72,14 @@ def sparse_to_viz(frame, prev_pts, curr_pts):
     return vis
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Extract optical flow from video to JSON")
-    parser.add_argument("video", help="Path to input video")
-    parser.add_argument("-o", "--output", help="Output JSON path")
-    parser.add_argument("--scale", type=float, default=1.0, help="Resize scale (default: 1.0)")
-    parser.add_argument("--start", type=int, default=0, help="Start frame index")
-    parser.add_argument("--end", type=int, default=None, help="End frame index (exclusive)")
-    parser.add_argument("--sparse", action="store_true", help="Sparse Lucas-Kanade tracking (default: dense grid)")
-    parser.add_argument("-s", "--step", type=int, default=16, help="Dense grid step (default: 16)")
-    parser.add_argument("-n", "--max-points", type=int, default=500, help="Sparse max feature points (default: 500)")
-    parser.add_argument("-q", "--quality", type=float, default=0.01, help="Sparse corner quality (default: 0.01)")
-    parser.add_argument("--viz", action="store_true", help="Save flow visualization frames")
-    parser.add_argument("--viz-step", type=int, default=10, help="Save viz every N frames (default: 10)")
-    args = parser.parse_args()
+VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 
-    cap = cv2.VideoCapture(args.video)
+
+def process_video(video_path, args):
+    cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        raise SystemExit(f"Cannot open video: {args.video}")
+        print(f"  Cannot open: {video_path}")
+        return
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -104,8 +94,7 @@ def main():
 
     mode = "sparse" if args.sparse else "dense"
 
-    # Build run folder name
-    video_stem = Path(args.video).stem
+    video_stem = Path(video_path).stem
     parts = [video_stem, mode]
     if args.sparse:
         parts.append(f"n{args.max_points}")
@@ -124,7 +113,7 @@ def main():
     if args.viz:
         viz_dir.mkdir(exist_ok=True)
 
-    print(f"Video: {Path(args.video).name}")
+    print(f"Video: {Path(video_path).name}")
     print(f"Resolution: {orig_w}x{orig_h} -> {out_w}x{out_h} (scale={args.scale})")
     print(f"FPS: {fps:.2f}")
     print(f"Mode: {mode}")
@@ -142,7 +131,9 @@ def main():
     cap.set(cv2.CAP_PROP_POS_FRAMES, start)
     ret, prev_frame = cap.read()
     if not ret:
-        raise SystemExit("Cannot read first frame")
+        print("  Cannot read first frame")
+        cap.release()
+        return
     if args.scale != 1.0:
         prev_frame = cv2.resize(prev_frame, new_size)
     prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
@@ -152,11 +143,13 @@ def main():
     else:
         result = run_dense(cap, prev_gray, prev_frame, start, end, args, viz_dir if args.viz else None)
 
+    cap.release()
+
     with open(json_path, "w") as f:
         json.dump(result, f)
 
     size_mb = Path(json_path).stat().st_size / (1024 * 1024)
-    print(f"\nDone. {len(result['frames'])} frames -> {run_dir}/")
+    print(f"Done. {len(result['frames'])} frames -> {run_dir}/")
     print(f"  flow.json ({size_mb:.1f} MB)")
     if args.viz:
         viz_files = sorted(viz_dir.glob("*.png"))
@@ -165,7 +158,42 @@ def main():
             import shutil
             preview = run_dir / "preview.png"
             shutil.copy2(str(viz_files[0]), str(preview))
-            print(f"  preview.png (copied from {viz_files[0].name})")
+            print(f"  preview.png")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Extract optical flow from video to JSON")
+    parser.add_argument("video", nargs="?", default=None, help="Path to input video (default: all in source/)")
+    parser.add_argument("-o", "--output", help="Output JSON path")
+    parser.add_argument("--scale", type=float, default=1.0, help="Resize scale (default: 1.0)")
+    parser.add_argument("--start", type=int, default=0, help="Start frame index")
+    parser.add_argument("--end", type=int, default=None, help="End frame index (exclusive)")
+    parser.add_argument("--sparse", action="store_true", help="Sparse Lucas-Kanade tracking (default: dense grid)")
+    parser.add_argument("-s", "--step", type=int, default=16, help="Dense grid step (default: 16)")
+    parser.add_argument("-n", "--max-points", type=int, default=500, help="Sparse max feature points (default: 500)")
+    parser.add_argument("-q", "--quality", type=float, default=0.01, help="Sparse corner quality (default: 0.01)")
+    parser.add_argument("--viz", action="store_true", help="Save flow visualization frames")
+    parser.add_argument("--viz-step", type=int, default=10, help="Save viz every N frames (default: 10)")
+    args = parser.parse_args()
+
+    if args.video:
+        process_video(args.video, args)
+    else:
+        script_dir = Path(__file__).resolve().parent
+        source_dir = script_dir / "source"
+        if not source_dir.is_dir():
+            raise SystemExit(f"source/ directory not found: {source_dir}")
+        videos = sorted(
+            f for f in source_dir.iterdir()
+            if f.suffix.lower() in VIDEO_EXTS
+        )
+        if not videos:
+            raise SystemExit(f"No video files found in {source_dir}/")
+        print(f"Found {len(videos)} video(s) in source/\n")
+        for i, v in enumerate(videos):
+            print(f"[{i + 1}/{len(videos)}]")
+            process_video(str(v), args)
+            print()
 
 
 def run_dense(cap, prev_gray, prev_frame, start, end, args, viz_dir):
