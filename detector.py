@@ -93,7 +93,12 @@ def process_video(video_path, args):
     out_h = int(orig_h * args.scale)
 
     start = max(0, args.start)
-    end = min(total_frames, args.end) if args.end else total_frames
+    if args.seconds is not None:
+        end = min(total_frames, start + int(args.seconds * fps))
+    elif args.end:
+        end = min(total_frames, args.end)
+    else:
+        end = total_frames
 
     mode = "sparse" if args.sparse else "dense"
 
@@ -103,6 +108,9 @@ def process_video(video_path, args):
         parts.append(f"n{args.max_points}")
     else:
         parts.append(f"s{args.step}")
+    if args.seconds is not None:
+        sec_str = str(args.seconds).rstrip("0").rstrip(".") if args.seconds != int(args.seconds) else str(int(args.seconds))
+        parts.append(f"t{sec_str}")
     if args.scale != 1.0:
         parts.append(f"scale{args.scale}")
     run_name = "_".join(parts)
@@ -124,6 +132,8 @@ def process_video(video_path, args):
         print(f"Max points: {args.max_points}  Quality: {args.quality}")
     else:
         print(f"Grid step: {args.step}px  Grid size: {out_h // args.step} x {out_w // args.step}")
+    if args.seconds is not None:
+        print(f"Duration: {args.seconds}s")
     print(f"Frames: {start} ~ {end} ({end - start} frames)")
     print(f"Output: {run_dir}/")
     print()
@@ -153,7 +163,7 @@ def process_video(video_path, args):
 
     size_mb = Path(json_path).stat().st_size / (1024 * 1024)
     print(f"Done. {len(result['frames'])} frames -> {run_dir}/")
-    print(f"  flow.json ({size_mb:.1f} MB)")
+    print(f"  {run_name}.json ({size_mb:.1f} MB)")
     if args.viz:
         viz_files = sorted(viz_dir.glob("*.png"))
         print(f"  viz/ ({len(viz_files)} images)")
@@ -170,6 +180,7 @@ def main():
     parser.add_argument("--scale", type=float, default=1.0, help="Resize scale (default: 1.0)")
     parser.add_argument("--start", type=int, default=0, help="Start frame index")
     parser.add_argument("--end", type=int, default=None, help="End frame index (exclusive)")
+    parser.add_argument("--seconds", type=float, default=None, help="Duration in seconds (overrides --end)")
     parser.add_argument("--sparse", action="store_true", help="Sparse Lucas-Kanade tracking (default: dense grid)")
     parser.add_argument("-s", "--step", type=int, default=16, help="Dense grid step (default: 16)")
     parser.add_argument("-n", "--max-points", type=int, default=500, help="Sparse max feature points (default: 500)")

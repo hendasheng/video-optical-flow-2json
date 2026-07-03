@@ -62,6 +62,7 @@ python detector.py <视频路径> [选项]
 | `--scale` | 1.0 | 缩放因子，4K 视频建议 `0.5` |
 | `--start` | 0 | 起始帧 |
 | `--end` | - | 结束帧 |
+| `--seconds` | - | 检测时长（秒），优先级高于 `--end` |
 | `-o, --output` | `output/<视频名>_flow.json` | 输出路径 |
 | `--viz` | - | 输出可视化帧 |
 | `--viz-step` | 10 | 可视化帧间隔 |
