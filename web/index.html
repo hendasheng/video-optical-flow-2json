@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Optical Flow Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #eee; font-family: system-ui, sans-serif; height: 100vh; overflow: hidden; }
+
+  .drop-zone {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: #16213e; z-index: 100;
+  }
+  .drop-zone.drag-over { background: #0f3460; }
+  .drop-inner {
+    border: 2px dashed #555; border-radius: 12px; padding: 60px 80px; text-align: center;
+  }
+  .drop-inner p { margin: 8px 0; color: #888; }
+  .drop-inner .title { font-size: 20px; color: #eee; margin-bottom: 16px; }
+  .drop-inner .status { color: #4ecca3; font-size: 14px; margin-top: 16px; }
+
+  input[type=file] { display: none; }
+
+  .player { display: none; position: relative; width: 100%; height: 100%; }
+  .player video, .player canvas {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;
+  }
+  .player canvas { z-index: 10; }
+
+  .controls {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
+    background: rgba(0,0,0,0.7); padding: 12px 24px; display: none;
+    align-items: center; gap: 16px;
+  }
+  .controls button {
+    background: #4ecca3; border: none; color: #000; padding: 8px 20px;
+    border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;
+  }
+  .controls button:hover { background: #3db88d; }
+  .controls input[type=range] { flex: 1; accent-color: #4ecca3; }
+  .controls .time { font-size: 13px; color: #aaa; min-width: 100px; text-align: center; }
+  .controls .arrow-scale { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #aaa; }
+  .controls .arrow-scale input { width: 80px; }
+  .info-bar {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+    z-index: 20; background: rgba(0,0,0,0.7); padding: 8px 20px; border-radius: 20px;
+    font-size: 12px; color: #aaa; display: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="drop-zone" id="dropZone">
+  <div class="drop-inner">
+    <p class="title">拖入视频 + 光流 JSON 文件</p>
+    <p>支持同时拖入两个文件，或分开拖入</p>
+    <p class="status" id="dropStatus"></p>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept="video/*,.json" multiple>
+
+<div class="info-bar" id="infoBar"></div>
+
+<div class="player" id="player">
+  <video id="video" crossorigin="anonymous"></video>
+  <canvas id="canvas"></canvas>
+</div>
+
+<div class="controls" id="controls">
+  <button id="playBtn">播放</button>
+  <input type="range" id="seekBar" value="0" min="0" step="0.01">
+  <span class="time" id="timeLabel">0:00 / 0:00</span>
+  <div class="arrow-scale">
+    <span>箭头缩放</span>
+    <input type="range" id="arrowScaleInput" value="1" min="0.2" max="4" step="0.1">
+    <span id="arrowScaleVal">1.0x</span>
+  </div>
+</div>
+
+<script>
+const dropZone = document.getElementById('dropZone');
+const dropStatus = document.getElementById('dropStatus');
+const fileInput = document.getElementById('fileInput');
+const player = document.getElementById('player');
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const controls = document.getElementById('controls');
+const infoBar = document.getElementById('infoBar');
+const playBtn = document.getElementById('playBtn');
+const seekBar = document.getElementById('seekBar');
+const timeLabel = document.getElementById('timeLabel');
+const arrowScaleInput = document.getElementById('arrowScaleInput');
+const arrowScaleVal = document.getElementById('arrowScaleVal');
+
+let flowData = null;
+let videoLoaded = false;
+let flowLoaded = false;
+let arrowScale = 1.0;
+let animationId = null;
+
+function frameByTime(t) {
+  if (!flowData || !flowData.frames.length) return 0;
+  const fps = flowData.fps || 30;
+  const idx = Math.round(t * fps);
+  return Math.min(idx, flowData.frames.length - 1);
+}
+
+function checkReady() {
+  if (videoLoaded && flowLoaded) {
+    dropZone.style.display = 'none';
+    player.style.display = 'block';
+    controls.style.display = 'flex';
+    infoBar.style.display = 'block';
+    updateInfoBar();
+    video.currentTime = 0;
+  }
+}
+
+function updateInfoBar() {
+  if (!flowData) return;
+  const jw = flowData.width, jh = flowData.height;
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const ratio = vw / jw;
+  const scaleInfo = ratio !== 1 ? ` | 放大 ${ratio.toFixed(1)}x` : '';
+  infoBar.textContent = `网格 ${flowData.grid_cols}x${flowData.grid_rows} | 步长 ${flowData.grid_step}px${scaleInfo} | ${flowData.total_frames} 帧`;
+}
+
+function formatTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+function setReady(which) {
+  if (which === 'video') {
+    videoLoaded = true;
+    dropStatus.textContent = dropStatus.textContent.replace('视频', '').trim() || '';
+  } else {
+    flowLoaded = true;
+    dropStatus.textContent = dropStatus.textContent.replace('JSON', '').trim() || '';
+  }
+  if (videoLoaded && flowLoaded) {
+    dropStatus.textContent = '全部就绪，即将启动...';
+    setTimeout(checkReady, 300);
+  }
+}
+
+function loadFlowJSON(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.frames || !data.grid_step) {
+        dropStatus.textContent = 'JSON 格式不正确：缺少 frames 或 grid_step';
+        return;
+      }
+      flowData = data;
+      dropStatus.textContent = `JSON 加载完成 (${data.total_frames} 帧)`;
+      setReady('flow');
+    } catch (err) {
+      dropStatus.textContent = 'JSON 解析失败: ' + err.message;
+    }
+  };
+  reader.readAsText(file);
+}
+
+function loadVideoFile(file) {
+  const url = URL.createObjectURL(file);
+  video.src = url;
+  video.onloadedmetadata = () => {
+    seekBar.max = video.duration;
+    timeLabel.textContent = `0:00 / ${formatTime(video.duration)}`;
+    dropStatus.textContent = `视频加载完成 (${video.videoWidth}x${video.videoHeight})`;
+    setReady('video');
+    drawFrame();
+  };
+}
+
+function handleFiles(files) {
+  for (const f of files) {
+    if (f.type.startsWith('video/')) loadVideoFile(f);
+    else if (f.name.endsWith('.json')) loadFlowJSON(f);
+  }
+}
+
+// Drag & drop
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  handleFiles(e.dataTransfer.files);
+});
+
+// Click to select files
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+// Playback controls
+playBtn.addEventListener('click', () => {
+  if (video.paused) {
+    video.play();
+    playBtn.textContent = '暂停';
+    drawLoop();
+  } else {
+    video.pause();
+    playBtn.textContent = '播放';
+    cancelAnimationFrame(animationId);
+  }
+});
+
+video.addEventListener('pause', () => {
+  playBtn.textContent = '播放';
+  cancelAnimationFrame(animationId);
+});
+video.addEventListener('play', () => {
+  playBtn.textContent = '暂停';
+  drawLoop();
+});
+
+seekBar.addEventListener('input', () => {
+  video.currentTime = parseFloat(seekBar.value);
+  drawFrame();
+});
+
+video.addEventListener('timeupdate', () => {
+  if (!video.paused) {
+    seekBar.value = video.currentTime;
+    timeLabel.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+  }
+});
+
+arrowScaleInput.addEventListener('input', () => {
+  arrowScale = parseFloat(arrowScaleInput.value);
+  arrowScaleVal.textContent = arrowScale.toFixed(1) + 'x';
+  drawFrame();
+});
+
+// Canvas drawing
+function resizeCanvas() {
+  const rect = player.getBoundingClientRect();
+  canvas.width = rect.width;
+  canvas.height = rect.height;
+}
+
+window.addEventListener('resize', () => { resizeCanvas(); drawFrame(); });
+
+function drawFrame() {
+  if (!videoLoaded || !flowLoaded) return;
+  resizeCanvas();
+
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) return;
+
+  const scale = Math.max(canvas.width / vw, canvas.height / vh);
+  const ox = (canvas.width - vw * scale) / 2;
+  const oy = (canvas.height - vh * scale) / 2;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.translate(ox, oy);
+  ctx.scale(scale, scale);
+
+  const frameIdx = frameByTime(video.currentTime);
+  const frameData = flowData.frames[Math.min(frameIdx, flowData.frames.length - 1)];
+  if (!frameData) { ctx.restore(); return; }
+
+  const flowRatio = vw / flowData.width;
+  const gs = flowData.grid_step * flowRatio;
+  const rows = frameData.flow.length;
+  const cols = rows > 0 ? frameData.flow[0].length : 0;
+
+  for (let r = 0; r < rows; r++) {
+    const row = frameData.flow[r];
+    for (let c = 0; c < cols; c++) {
+      const [dx, dy] = row[c];
+      const mag = Math.sqrt(dx * dx + dy * dy);
+      if (mag < 0.3) continue;
+
+      const x = c * gs + gs / 2;
+      const y = r * gs + gs / 2;
+      const sx = dx * flowRatio * arrowScale;
+      const sy = dy * flowRatio * arrowScale;
+
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + sx, y + sy);
+      ctx.strokeStyle = `rgba(255, 255, 0, ${0.6 + Math.min(mag / 8, 0.4)})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      if (mag * flowRatio * arrowScale > 1) {
+        const angle = Math.atan2(sy, sx);
+        const headLen = Math.min(4, mag * flowRatio * arrowScale * 0.3);
+        const tipX = x + sx;
+        const tipY = y + sy;
+        ctx.beginPath();
+        ctx.moveTo(tipX, tipY);
+        ctx.lineTo(tipX - headLen * Math.cos(angle - 0.8), tipY - headLen * Math.sin(angle - 0.8));
+        ctx.moveTo(tipX, tipY);
+        ctx.lineTo(tipX - headLen * Math.cos(angle + 0.8), tipY - headLen * Math.sin(angle + 0.8));
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function drawLoop() {
+  if (!video.paused) {
+    drawFrame();
+    animationId = requestAnimationFrame(drawLoop);
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && e.target === document.body) {
+    e.preventDefault();
+    if (video.paused) video.play(); else video.pause();
+  }
+  if (e.code === 'ArrowLeft') video.currentTime = Math.max(0, video.currentTime - 1 / (flowData?.fps || 30));
+  if (e.code === 'ArrowRight') video.currentTime += 1 / (flowData?.fps || 30);
+});
+</script>
+</body>
+</html>
