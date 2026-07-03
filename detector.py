@@ -59,14 +59,16 @@ def flow_to_arrows(frame, flow, grid_step=16, arrow_scale=1.0):
     return vis
 
 
-def sparse_to_viz(frame, prev_pts, curr_pts, pts_id):
+def sparse_to_viz(frame, prev_pts, curr_pts):
     """Draw tracked sparse points and their motion vectors."""
     vis = frame.copy()
     for i in range(len(prev_pts)):
         x1, y1 = prev_pts[i].ravel()
         x2, y2 = curr_pts[i].ravel()
+        dx, dy = (x2 - x1) * 8, (y2 - y1) * 8
+        tip = (int(x1 + dx), int(y1 + dy))
         cv2.circle(vis, (int(x2), int(y2)), 3, (0, 255, 255), -1)
-        cv2.line(vis, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 1)
+        cv2.arrowedLine(vis, (int(x1), int(y1)), tip, (0, 255, 0), 1, tipLength=0.3)
     return vis
 
 
@@ -255,7 +257,7 @@ def run_sparse(cap, prev_gray, prev_frame, start, end, args, viz_dir):
 
             if viz_dir and (i - start) % args.viz_step == 0:
                 cv2.imwrite(str(viz_dir / f"frame_{i:06d}.png"),
-                            sparse_to_viz(curr_frame, good_prev, good_curr, pt_ids))
+                            sparse_to_viz(curr_frame, good_prev, good_curr))
 
             pts = good_curr.reshape(-1, 1, 2)
 
