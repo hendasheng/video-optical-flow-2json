@@ -101,6 +101,27 @@ def main():
     end = min(total_frames, args.end) if args.end else total_frames
 
     mode = "sparse" if args.sparse else "dense"
+
+    # Build run folder name
+    video_stem = Path(args.video).stem
+    parts = [video_stem, mode]
+    if args.sparse:
+        parts.append(f"n{args.max_points}")
+    else:
+        parts.append(f"s{args.step}")
+    if args.scale != 1.0:
+        parts.append(f"scale{args.scale}")
+    run_name = "_".join(parts)
+
+    script_dir = Path(__file__).resolve().parent
+    run_dir = script_dir / "output" / run_name
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    json_path = args.output or str(run_dir / "flow.json")
+    viz_dir = run_dir / "viz"
+    if args.viz:
+        viz_dir.mkdir(exist_ok=True)
+
     print(f"Video: {Path(args.video).name}")
     print(f"Resolution: {orig_w}x{orig_h} -> {out_w}x{out_h} (scale={args.scale})")
     print(f"FPS: {fps:.2f}")
@@ -110,6 +131,7 @@ def main():
     else:
         print(f"Grid step: {args.step}px  Grid size: {out_h // args.step} x {out_w // args.step}")
     print(f"Frames: {start} ~ {end} ({end - start} frames)")
+    print(f"Output: {run_dir}/")
     print()
 
     if args.scale != 1.0:
@@ -123,31 +145,22 @@ def main():
         prev_frame = cv2.resize(prev_frame, new_size)
     prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
 
-    script_dir = Path(__file__).resolve().parent
-    output_dir = script_dir / "output"
-    output_dir.mkdir(exist_ok=True)
-    suffix = "_sparse.json" if args.sparse else "_flow.json"
-    output_path = args.output or str(output_dir / f"{Path(args.video).stem}{suffix}")
-
-    if args.viz:
-        viz_dir = output_dir / f"{Path(args.video).stem}_viz_{mode}"
-        viz_dir.mkdir(exist_ok=True)
-
     if args.sparse:
-        result = run_sparse(cap, prev_gray, prev_frame, start, end, args, output_path, viz_dir if args.viz else None)
+        result = run_sparse(cap, prev_gray, prev_frame, start, end, args, viz_dir if args.viz else None)
     else:
-        result = run_dense(cap, prev_gray, prev_frame, start, end, args, output_path, viz_dir if args.viz else None)
+        result = run_dense(cap, prev_gray, prev_frame, start, end, args, viz_dir if args.viz else None)
 
-    with open(output_path, "w") as f:
+    with open(json_path, "w") as f:
         json.dump(result, f)
 
-    size_mb = Path(output_path).stat().st_size / (1024 * 1024)
-    print(f"\nDone. {len(result['frames'])} frames -> {output_path} ({size_mb:.1f} MB)")
+    size_mb = Path(json_path).stat().st_size / (1024 * 1024)
+    print(f"\nDone. {len(result['frames'])} frames -> {run_dir}/")
+    print(f"  flow.json ({size_mb:.1f} MB)")
     if args.viz:
-        print(f"Viz frames -> {viz_dir}/ ({len(list(viz_dir.glob('*.png')))} images)")
+        print(f"  viz/ ({len(list(viz_dir.glob('*.png')))} images)")
 
 
-def run_dense(cap, prev_gray, prev_frame, start, end, args, output_path, viz_dir):
+def run_dense(cap, prev_gray, prev_frame, start, end, args, viz_dir):
     result = {
         "mode": "dense",
         "video": str(Path(args.video).resolve()),
@@ -185,7 +198,7 @@ def run_dense(cap, prev_gray, prev_frame, start, end, args, output_path, viz_dir
     return result
 
 
-def run_sparse(cap, prev_gray, prev_frame, start, end, args, output_path, viz_dir):
+def run_sparse(cap, prev_gray, prev_frame, start, end, args, viz_dir):
     pts = detect_features(prev_gray, args.max_points, args.quality)
     if pts is None:
         raise SystemExit("No features detected on first frame")
